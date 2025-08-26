@@ -14,7 +14,95 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      categories: {
+        Row: {
+          active: boolean
+          created_at: string
+          examples: string | null
+          id: string
+          name: string
+          quota: number
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          examples?: string | null
+          id?: string
+          name: string
+          quota?: number
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          examples?: string | null
+          id?: string
+          name?: string
+          quota?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      rsvp_items: {
+        Row: {
+          attendees_count: number
+          brings_utensils: boolean | null
+          category_id: string | null
+          coming: boolean
+          contact: string
+          created_at: string
+          diet_tags: string[] | null
+          guest_name: string
+          id: string
+          item_title: string | null
+          servings: number | null
+          updated_at: string
+          warm_needed: boolean | null
+          warm_notes: string | null
+        }
+        Insert: {
+          attendees_count?: number
+          brings_utensils?: boolean | null
+          category_id?: string | null
+          coming?: boolean
+          contact: string
+          created_at?: string
+          diet_tags?: string[] | null
+          guest_name: string
+          id?: string
+          item_title?: string | null
+          servings?: number | null
+          updated_at?: string
+          warm_needed?: boolean | null
+          warm_notes?: string | null
+        }
+        Update: {
+          attendees_count?: number
+          brings_utensils?: boolean | null
+          category_id?: string | null
+          coming?: boolean
+          contact?: string
+          created_at?: string
+          diet_tags?: string[] | null
+          guest_name?: string
+          id?: string
+          item_title?: string | null
+          servings?: number | null
+          updated_at?: string
+          warm_needed?: boolean | null
+          warm_notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rsvp_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
