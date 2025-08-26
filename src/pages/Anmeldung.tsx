@@ -42,7 +42,7 @@ const Anmeldung = () => {
     contact: '',
     coming: 'yes',
     attendeesCount: 1,
-    categoryId: '',
+    categoryId: null,
     itemTitle: '',
     dietTags: [] as string[],
     warmNeeded: false,
@@ -357,7 +357,7 @@ const Anmeldung = () => {
                             <SelectValue placeholder="Wähle eine Kategorie (optional)" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">Bringe nichts mit / Überraschung</SelectItem>
+                            <SelectItem value={null}>Bringe nichts mit / Überraschung</SelectItem>
                             {categories.map(category => {
                               const status = getAvailabilityStatus(category);
                               return (

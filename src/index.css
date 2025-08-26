@@ -48,6 +48,13 @@ All colors MUST be HSL.
 
     /* Typografie */
     --font-family-warm: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+
+  .bg-warm-gradient {
+    background: var(--warm-gradient);
+  }
+  .dark .bg-warm-gradient {
+    background: var(--warm-gradient);
 
     --radius: 0.5rem;
 
@@ -149,4 +156,13 @@ All colors MUST be HSL.
     outline-offset: 2px;
     border-radius: 4px;
   }
+  @keyframes pulse {
+  0%, 100% { opacity: 0.35 }
+  50% { opacity: 0.5 }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-50%) }
+  100% { transform: translateX(150%) }
+}
 }
