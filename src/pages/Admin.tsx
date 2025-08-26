@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Settings, Users, Download, Edit2, Save, X, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Settings, Users, Download, Edit2, Save, X, AlertTriangle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -25,8 +30,15 @@ interface RsvpItem {
   item_title: string;
   attendees_count: number;
   coming: boolean;
-  category_name: string;
+  category_name: string; // Derived from category_id for display
+  category_id: string | null; // Actual foreign key for Supabase
   created_at: string;
+  updated_at: string; // New field to track updates
+  servings: number | null;
+  diet_tags: string[] | null;
+  warm_needed: boolean | null;
+  warm_notes: string | null;
+  brings_utensils: boolean | null;
 }
 
 const Admin = () => {
@@ -35,6 +47,9 @@ const Admin = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [rsvpItems, setRsvpItems] = useState<RsvpItem[]>([]);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [editingQuotaValue, setEditingQuotaValue] = useState<number | null>(null);
+  const [editingRsvpItem, setEditingRsvpItem] = useState<RsvpItem | null>(null);
+  const [isRsvpEditDialogOpen, setIsRsvpEditDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
@@ -83,6 +98,13 @@ const Admin = () => {
           attendees_count,
           coming,
           created_at,
+          updated_at,
+          servings,
+          diet_tags,
+          warm_needed,
+          warm_notes,
+          brings_utensils,
+          category_id,
           categories:category_id (name)
         `)
         .order('created_at', { ascending: false });
@@ -103,15 +125,22 @@ const Admin = () => {
         current_count: categoryCounts[cat.name] || 0
       })) || [];
 
-      const formattedRsvp = rsvpData?.map(item => ({
+      const formattedRsvp: RsvpItem[] = rsvpData?.map((item: any) => ({
         id: item.id,
         guest_name: item.guest_name,
         contact: item.contact,
         item_title: item.item_title || '',
         attendees_count: item.attendees_count,
         coming: item.coming,
-        category_name: (item.categories as any)?.name || 'Ohne Kategorie',
-        created_at: item.created_at
+        category_name: item.categories?.name || 'Ohne Kategorie',
+        category_id: item.category_id,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        servings: item.servings,
+        diet_tags: item.diet_tags,
+        warm_needed: item.warm_needed,
+        warm_notes: item.warm_notes,
+        brings_utensils: item.brings_utensils,
       })) || [];
 
       setCategories(enrichedCategories);
@@ -128,7 +157,96 @@ const Admin = () => {
     }
   };
 
-  const updateCategoryQuota = async (categoryId: string, newQuota: number) => {
+  const handleEditRsvp = (item: RsvpItem) => {
+    setEditingRsvpItem(item);
+    setIsRsvpEditDialogOpen(true);
+  };
+
+  const handleCancelEditRsvp = () => {
+    setEditingRsvpItem(null);
+    setIsRsvpEditDialogOpen(false);
+  };
+
+  const handleSaveRsvp = async (updatedItem: RsvpItem) => {
+    setLoading(true);
+    try {
+      const { category_name, created_at, ...itemToUpdate } = updatedItem; // Exclude derived/read-only fields
+      const { error } = await supabase
+        .from('rsvp_items')
+        .update({
+          ...itemToUpdate,
+          diet_tags: itemToUpdate.diet_tags || [], // Ensure diet_tags is an array
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', updatedItem.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Anmeldung aktualisiert",
+        description: "Die RSVP-Anmeldung wurde erfolgreich gespeichert.",
+      });
+      loadData(); // Reload all data to reflect changes and update counts
+      handleCancelEditRsvp();
+    } catch (error) {
+      console.error('Error saving RSVP item:', error);
+      toast({
+        title: "Fehler beim Speichern",
+        description: "Die RSVP-Anmeldung konnte nicht aktualisiert werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteRsvp = async (itemId: string) => {
+    if (!window.confirm('Bist du sicher, dass du diese Anmeldung löschen möchtest?')) {
+      return;
+    }
+
+    setLoading(true);
+    console.log('Attempting to delete RSVP item with ID:', itemId); // Log the item ID
+    try {
+      const { error } = await supabase
+        .from('rsvp_items')
+        .delete()
+        .eq('id', itemId);
+
+      if (error) {
+        console.error('Supabase delete error:', error); // Log the Supabase error object
+        throw error;
+      }
+
+      toast({
+        title: "Anmeldung gelöscht",
+        description: "Die RSVP-Anmeldung wurde erfolgreich entfernt.",
+      });
+      loadData(); // Reload all data to reflect changes and update counts
+    } catch (error) {
+      console.error('Error deleting RSVP item:', error);
+      toast({
+        title: "Fehler beim Löschen",
+        description: "Die RSVP-Anmeldung konnte nicht gelöscht werden.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateCategoryQuota = async (categoryId: string, newQuota: number | null) => {
+    if (newQuota === null || isNaN(newQuota) || newQuota < 0) {
+      toast({
+        title: "Ungültige Quota",
+        description: "Bitte gib eine gültige positive Zahl ein.",
+        variant: "destructive",
+      });
+      setEditingCategory(null);
+      setEditingQuotaValue(null);
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('categories')
@@ -329,15 +447,19 @@ const Admin = () => {
                           <Input
                             type="number"
                             min="0"
-                            defaultValue={category.quota}
+                            value={editingQuotaValue !== null && !isNaN(editingQuotaValue) ? editingQuotaValue : ''}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setEditingQuotaValue(value === '' ? null : parseInt(value));
+                            }}
                             className="w-20"
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                const newValue = parseInt((e.target as HTMLInputElement).value);
-                                updateCategoryQuota(category.id, newValue);
+                                updateCategoryQuota(category.id, editingQuotaValue);
                               }
                               if (e.key === 'Escape') {
                                 setEditingCategory(null);
+                                setEditingQuotaValue(null);
                               }
                             }}
                             autoFocus
@@ -346,9 +468,8 @@ const Admin = () => {
                             size="sm"
                             variant="ghost"
                             onClick={() => {
-                              const input = document.querySelector(`input[defaultValue="${category.quota}"]`) as HTMLInputElement;
-                              if (input) {
-                                updateCategoryQuota(category.id, parseInt(input.value));
+                              if (editingQuotaValue !== null) {
+                                updateCategoryQuota(category.id, editingQuotaValue);
                               }
                             }}
                           >
@@ -357,7 +478,10 @@ const Admin = () => {
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => setEditingCategory(null)}
+                            onClick={() => {
+                              setEditingCategory(null);
+                              setEditingQuotaValue(null);
+                            }}
                           >
                             <X className="h-4 w-4" />
                           </Button>
@@ -366,7 +490,10 @@ const Admin = () => {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => setEditingCategory(category.id)}
+                          onClick={() => {
+                            setEditingCategory(category.id);
+                            setEditingQuotaValue(category.quota);
+                          }}
                         >
                           <Edit2 className="h-4 w-4" />
                         </Button>
@@ -395,6 +522,7 @@ const Admin = () => {
                       <TableHead>Kategorie</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Anmeldung</TableHead>
+                      <TableHead className="text-right">Aktionen</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -421,6 +549,14 @@ const Admin = () => {
                             minute: '2-digit'
                           })}
                         </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => handleEditRsvp(item)}>
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteRsvp(item.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -430,6 +566,133 @@ const Admin = () => {
           </Card>
         </div>
       </div>
+
+      {/* RSVP Edit Dialog */}
+      <Dialog open={isRsvpEditDialogOpen} onOpenChange={setIsRsvpEditDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>{editingRsvpItem?.guest_name ? `RSVP bearbeiten: ${editingRsvpItem.guest_name}` : 'RSVP bearbeiten'}</DialogTitle>
+          </DialogHeader>
+          {editingRsvpItem && (
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="guest_name" className="text-right">Name</Label>
+                <Input
+                  id="guest_name"
+                  value={editingRsvpItem.guest_name}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, guest_name: e.target.value })}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="contact" className="text-right">Kontakt</Label>
+                <Input
+                  id="contact"
+                  value={editingRsvpItem.contact}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, contact: e.target.value })}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="item_title" className="text-right">Mitbringsel</Label>
+                <Input
+                  id="item_title"
+                  value={editingRsvpItem.item_title || ''}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, item_title: e.target.value })}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="attendees_count" className="text-right">Personen</Label>
+                <Input
+                  id="attendees_count"
+                  type="number"
+                  min="1"
+                  value={editingRsvpItem.attendees_count}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, attendees_count: parseInt(e.target.value) || 1 })}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="category_id" className="text-right">Kategorie</Label>
+                <Select
+                  value={editingRsvpItem.category_id || ''}
+                  onValueChange={(value) => setEditingRsvpItem({ ...editingRsvpItem, category_id: value })}
+                >
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Kategorie auswählen" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map(category => (
+                      <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="coming" className="text-right">Kommt</Label>
+                <Switch
+                  id="coming"
+                  checked={editingRsvpItem.coming}
+                  onCheckedChange={(checked) => setEditingRsvpItem({ ...editingRsvpItem, coming: checked })}
+                  className="col-span-3 justify-self-start"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="servings" className="text-right">Portionen</Label>
+                <Input
+                  id="servings"
+                  type="number"
+                  min="0"
+                  value={editingRsvpItem.servings || ''}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, servings: parseInt(e.target.value) || null })}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="diet_tags" className="text-right">Diät-Tags (Komma-separiert)</Label>
+                <Input
+                  id="diet_tags"
+                  value={editingRsvpItem.diet_tags?.join(', ') || ''}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, diet_tags: e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag !== '') })}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="warm_needed" className="text-right">Warm halten?</Label>
+                <Checkbox
+                  id="warm_needed"
+                  checked={editingRsvpItem.warm_needed || false}
+                  onCheckedChange={(checked: boolean) => setEditingRsvpItem({ ...editingRsvpItem, warm_needed: checked })}
+                  className="col-span-3 justify-self-start"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="warm_notes" className="text-right">Notizen (Warm)</Label>
+                <Textarea
+                  id="warm_notes"
+                  value={editingRsvpItem.warm_notes || ''}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, warm_notes: e.target.value })}
+                  className="col-span-3"
+                />
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="brings_utensils" className="text-right">Besteck mitbringen?</Label>
+                <Checkbox
+                  id="brings_utensils"
+                  checked={editingRsvpItem.brings_utensils || false}
+                  onCheckedChange={(checked: boolean) => setEditingRsvpItem({ ...editingRsvpItem, brings_utensils: checked })}
+                  className="col-span-3 justify-self-start"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCancelEditRsvp}>Abbrechen</Button>
+            <Button onClick={() => editingRsvpItem && handleSaveRsvp(editingRsvpItem)}>Speichern</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
