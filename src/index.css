@@ -8,47 +8,51 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Warme, familienfreundliche Farbpalette für Regulas Geburtstag */
-    --background: 40 20% 97%;  /* Warmes Cremeweiß */
-    --foreground: 25 15% 15%;  /* Dunkles warmbraun */
+    /* Hippie Party Farbpalette */
+    --background: linear-gradient(135deg, hsl(330 100% 30% / 0.8) 0%, hsl(120 100% 30% / 0.8) 100%); /* Darker Pink to Green gradient, 80% transparent */
+    --foreground: 0 0% 100%;    /* White */
 
-    --card: 42 25% 96%;        /* Sanftes beige für Karten */
-    --card-foreground: 25 15% 15%;
+    --card: 330 100% 45%;       /* Slightly darker pink for cards */
+    --card-foreground: 0 0% 100%;
 
-    --popover: 42 25% 96%;
-    --popover-foreground: 25 15% 15%;
+    --popover: 330 100% 45%;
+    --popover-foreground: 0 0% 100%;
 
-    /* Herbstlicher Goldton als primäre Farbe */
-    --primary: 30 85% 45%;     /* Warmes Goldorange */
-    --primary-foreground: 42 25% 96%;
-    --primary-glow: 35 90% 60%; /* Helleres Gold für Akzente */
+    /* Yellow as primary color for accents */
+    --primary: 60 100% 50%;     /* Pure Yellow */
+    --primary-foreground: 330 100% 50%; /* Vibrant Pink for text on yellow */
+    --primary-glow: 60 100% 60%; /* Brighter yellow for glow */
 
-    /* Sanfte Sekundärfarben */
-    --secondary: 35 35% 88%;   /* Warmes helles beige */
-    --secondary-foreground: 25 15% 15%;
+    /* Green as secondary color for accents */
+    --secondary: 120 100% 50%;  /* Lime Green */
+    --secondary-foreground: 0 0% 100%; /* White */
 
-    --muted: 38 30% 90%;       /* Sehr helles warmgrau */
-    --muted-foreground: 25 12% 45%;
+    --muted: 330 100% 60%;      /* Lighter pink for muted elements */
+    --muted-foreground: 0 0% 100%;
 
-    --accent: 45 60% 75%;      /* Sanftes Pfirsich */
-    --accent-foreground: 25 15% 15%;
+    --accent: 330 100% 70%;     /* Even lighter pink for accents */
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 70% 55%;
-    --destructive-foreground: 42 25% 96%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 38 25% 85%;      /* Warme Grenzlinien */
-    --input: 40 20% 94%;       /* Eingabefeld-Hintergrund */
-    --ring: 30 85% 45%;        /* Focus-Ring in Primärfarbe */
+    --border: 330 100% 70%;     /* Lighter pink border */
+    --input: 330 100% 60%;      /* Input field background */
+    --ring: 60 100% 50%;        /* Focus-Ring in Primary color (Yellow) */
 
-    /* Besondere Designelemente */
-    --warm-gradient: linear-gradient(135deg, hsl(30 85% 45%) 0%, hsl(35 90% 60%) 50%, hsl(45 60% 75%) 100%);
-    --soft-gradient: linear-gradient(180deg, hsl(42 25% 96%) 0%, hsl(40 20% 97%) 100%);
-    --celebration-shadow: 0 10px 30px -10px hsl(30 85% 45% / 0.3);
-    --gentle-shadow: 0 4px 12px -4px hsl(25 15% 15% / 0.1);
+    /* Hippie Party Designelemente */
+    --warm-gradient: linear-gradient(135deg, hsl(330 100% 50%) 0%, hsl(60 100% 50%) 100%); /* Pink to Yellow */
+    --sunset-gradient: linear-gradient(180deg, hsl(330 100% 50%) 0%, hsl(120 100% 50%) 100%); /* Pink to Green */
+    --soft-gradient: hsl(330 100% 50%); /* Solid vibrant pink background */
+    --celebration-shadow: 0 10px 30px -10px hsl(60 100% 50% / 0.4); /* Yellow shadow */
+    --gentle-shadow: 0 4px 12px -4px hsl(0 0% 100% / 0.15); /* White shadow */
+    --romantic-glow: 0 0 20px hsl(60 100% 60% / 0.3); /* Yellow glow */
 
-    /* Typografie */
-    --font-family-warm: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    /* Font for readability for 70+ audience */
+    --font-family-warm: 'Arial', sans-serif; /* Simple, clear font */
   }
+}
+
 
   .bg-warm-gradient {
     background: var(--warm-gradient);
@@ -120,7 +124,6 @@ All colors MUST be HSL.
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
-}
 
 @layer base {
   * {
@@ -128,22 +131,22 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply text-foreground font-sans; /* Removed bg-background */
     font-family: var(--font-family-warm);
-    font-size: 18px; /* Größere Basis-Schrift für bessere Lesbarkeit */
+    font-size: 20px; /* Larger base font for better readability for 70+ */
     line-height: 1.6;
   }
   
   /* Überschriften-Stil für familiäre Atmosphäre */
   h1, h2, h3, h4, h5, h6 {
     @apply text-foreground;
-    font-weight: 600;
+    font-weight: 700; /* Bolder headings for readability */
     line-height: 1.2;
   }
   
-  h1 { font-size: 2.5rem; }  /* Sehr große Überschriften */
-  h2 { font-size: 2rem; }
-  h3 { font-size: 1.5rem; }
+  h1 { font-size: 3rem; }  /* Very large headings */
+  h2 { font-size: 2.5rem; }
+  h3 { font-size: 2rem; }
   
   /* Sanfte Button-Übergänge */
   button, .btn {

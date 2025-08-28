@@ -61,7 +61,15 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
-				}
+				},
+				// Custom colors from the image
+				'hippie-pink': 'hsl(330 100% 50%)',
+				'hippie-yellow': 'hsl(60 100% 50%)',
+				'hippie-green': 'hsl(120 100% 50%)',
+				'hippie-white': 'hsl(0 0% 100%)'
+			},
+			fontFamily: {
+				chicle: ['Chicle', 'cursive'],
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
