@@ -630,13 +630,17 @@ const Admin = () => {
                 </Select>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="coming" className="text-right">Kommt</Label>
-                <Switch
-                  id="coming"
-                  checked={editingRsvpItem.coming}
-                  onCheckedChange={(checked) => setEditingRsvpItem({ ...editingRsvpItem, coming: checked })}
-                  className="col-span-3 justify-self-start"
-                />
+                <Label htmlFor="coming" className="text-right">Status</Label>
+                <div className="col-span-3 flex items-center gap-2">
+                  <Switch
+                    id="coming"
+                    checked={editingRsvpItem.coming}
+                    onCheckedChange={(checked) => setEditingRsvpItem({ ...editingRsvpItem, coming: checked })}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    {editingRsvpItem.coming ? 'Kommt' : 'Verhindert'}
+                  </span>
+                </div>
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="servings" className="text-right">Portionen</Label>

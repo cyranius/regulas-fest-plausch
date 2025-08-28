@@ -7,7 +7,8 @@ import Lottie from 'lottie-react';
 
 // Bestehende Bilder
 import regulaHero from '@/assets/nonna.png';
-import bgImage from '@/assets/bg.png'; // Add the background image import
+import bgImage from '@/assets/bg.jpeg'; // Add the background image import
+import bgVideo from '@/assets/bgvid.mp4'; // Add the background video import
 const EVENT_ISO = '2025-10-04T17:00:00+02:00'; // 04.10.2025 17:00 (CEST)
 
 const Home = () => {
@@ -27,13 +28,31 @@ const Home = () => {
 
   return (
     <div className="min-h-screen text-foreground relative">
-      {/* Background Image with Pink Overlay */}
+      {/* Background Video with Pink Overlay */}
       <div className="fixed inset-0 z-[-1]">
         <img 
           src={bgImage} 
           alt="Background" 
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover absolute inset-0 transition-opacity duration-1000"
+          id="background-image"
         />
+        <video
+          id="background-video"
+          className="w-full h-full object-cover absolute inset-0 opacity-0 transition-opacity duration-1000"
+          autoPlay
+          loop
+          muted
+          playsInline
+          onLoadedData={(e) => {
+            e.currentTarget.playbackRate = 0.5; // Set video speed to half
+            e.currentTarget.style.opacity = '1';
+            const img = document.getElementById('background-image');
+            if (img) img.style.opacity = '0';
+          }}
+        >
+          <source src={bgVideo} type="video/mp4" />
+          Your browser does not support the video tag.
+        </video>
         <div className="absolute inset-0 bg-pink-600/80 backdrop-blur-[0.5px]"></div>
       </div>
 
