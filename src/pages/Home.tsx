@@ -19,13 +19,6 @@ const Home = () => {
     setMounted(true);
   }, []);
 
-  // Sticky CTA erst einblenden, wenn man am Hero vorbei ist
-  useEffect(() => {
-    const onScroll = () => setShowStickyCta(window.scrollY > 320);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
   return (
     <div className="min-h-screen text-foreground relative">
       {/* Background Video with Pink Overlay */}
