@@ -23,22 +23,27 @@ interface Category {
   current_count: number;
 }
 
-interface RsvpItem {
+interface Guest {
   id: string;
   guest_name: string;
   contact: string;
-  item_title: string;
   attendees_count: number;
   coming: boolean;
-  category_name: string; // Derived from category_id for display
-  category_id: string | null; // Actual foreign key for Supabase
   created_at: string;
-  updated_at: string; // New field to track updates
+  updated_at: string;
+}
+
+interface RsvpItem {
+  id: string;
+  item_title: string;
+  category_name: string;
+  category_id: string | null;
   servings: number | null;
   diet_tags: string[] | null;
   warm_needed: boolean | null;
   warm_notes: string | null;
   brings_utensils: boolean | null;
+  guest: Guest; // Nested guest data
 }
 
 const Admin = () => {
@@ -46,6 +51,7 @@ const Admin = () => {
   const [password, setPassword] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
   const [rsvpItems, setRsvpItems] = useState<RsvpItem[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [editingQuotaValue, setEditingQuotaValue] = useState<number | null>(null);
   const [editingRsvpItem, setEditingRsvpItem] = useState<RsvpItem | null>(null);
@@ -87,33 +93,45 @@ const Admin = () => {
 
       if (categoriesError) throw categoriesError;
 
-      // Load RSVP items with category info
+      const { data: guestsData, error: guestsError } = await supabase
+        .from('guests')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (guestsError) throw guestsError;
+      setGuests(guestsData || []);
+
       const { data: rsvpData, error: rsvpError } = await supabase
         .from('rsvp_items')
         .select(`
           id,
-          guest_name,
-          contact,
           item_title,
-          attendees_count,
-          coming,
-          created_at,
-          updated_at,
           servings,
           diet_tags,
           warm_needed,
           warm_notes,
           brings_utensils,
           category_id,
-          categories:category_id (name)
+          categories:category_id (name),
+          guest:guests!guest_id (
+            id,
+            guest_name,
+            contact,
+            attendees_count,
+            coming,
+            created_at,
+            updated_at
+          )
         `)
         .order('created_at', { ascending: false });
-
+        
       if (rsvpError) throw rsvpError;
 
-      // Count items per category
+      const comingGuests = guestsData.filter(g => g.coming);
+
       const categoryCounts = rsvpData?.reduce((acc, item) => {
-        if (item.coming && item.categories) {
+        const guestIsComing = comingGuests.some(g => g.id === (item.guest as any)?.id);
+        if (guestIsComing && item.categories) {
           const categoryName = (item.categories as any).name;
           acc[categoryName] = (acc[categoryName] || 0) + 1;
         }
@@ -126,21 +144,8 @@ const Admin = () => {
       })) || [];
 
       const formattedRsvp: RsvpItem[] = rsvpData?.map((item: any) => ({
-        id: item.id,
-        guest_name: item.guest_name,
-        contact: item.contact,
-        item_title: item.item_title || '',
-        attendees_count: item.attendees_count,
-        coming: item.coming,
+        ...item,
         category_name: item.categories?.name || 'Ohne Kategorie',
-        category_id: item.category_id,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-        servings: item.servings,
-        diet_tags: item.diet_tags,
-        warm_needed: item.warm_needed,
-        warm_notes: item.warm_notes,
-        brings_utensils: item.brings_utensils,
       })) || [];
 
       setCategories(enrichedCategories);
@@ -170,17 +175,35 @@ const Admin = () => {
   const handleSaveRsvp = async (updatedItem: RsvpItem) => {
     setLoading(true);
     try {
-      const { category_name, created_at, ...itemToUpdate } = updatedItem; // Exclude derived/read-only fields
-      const { error } = await supabase
+      const { guest, ...rsvpItemData } = updatedItem;
+      const { error: rsvpError } = await supabase
         .from('rsvp_items')
         .update({
-          ...itemToUpdate,
-          diet_tags: itemToUpdate.diet_tags || [], // Ensure diet_tags is an array
+          item_title: rsvpItemData.item_title,
+          category_id: rsvpItemData.category_id,
+          servings: rsvpItemData.servings,
+          diet_tags: rsvpItemData.diet_tags || [],
+          warm_needed: rsvpItemData.warm_needed,
+          warm_notes: rsvpItemData.warm_notes,
+          brings_utensils: rsvpItemData.brings_utensils,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', updatedItem.id);
+        .eq('id', rsvpItemData.id);
 
-      if (error) throw error;
+      if (rsvpError) throw rsvpError;
+
+      const { error: guestError } = await supabase
+        .from('guests')
+        .update({
+          guest_name: guest.guest_name,
+          contact: guest.contact,
+          attendees_count: guest.attendees_count,
+          coming: guest.coming,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', guest.id);
+
+      if (guestError) throw guestError;
 
       toast({
         title: "Anmeldung aktualisiert",
@@ -279,13 +302,13 @@ const Admin = () => {
     const csvContent = [
       ['Name', 'Kontakt', 'Mitbringsel', 'Kategorie', 'Anzahl Personen', 'Kommt', 'Anmeldedatum'].join(';'),
       ...rsvpItems.map(item => [
-        item.guest_name,
-        item.contact,
+        item.guest.guest_name,
+        item.guest.contact,
         item.item_title,
         item.category_name,
-        item.attendees_count.toString(),
-        item.coming ? 'Ja' : 'Nein',
-        new Date(item.created_at).toLocaleDateString('de-CH')
+        item.guest.attendees_count.toString(),
+        item.guest.coming ? 'Ja' : 'Nein',
+        new Date(item.guest.created_at).toLocaleDateString('de-CH')
       ].join(';'))
     ].join('\n');
 
@@ -296,8 +319,8 @@ const Admin = () => {
     link.click();
   };
 
-  const totalAttendees = rsvpItems.reduce((sum, item) => 
-    sum + (item.coming ? item.attendees_count : 0), 0
+  const totalAttendees = guests.reduce((sum, guest) => 
+    sum + (guest.coming ? guest.attendees_count : 0), 0
   );
 
   if (!isAuthenticated) {
@@ -391,7 +414,7 @@ const Admin = () => {
             <Card>
               <CardContent className="pt-6 text-center">
                 <div className="text-2xl font-bold text-foreground">
-                  {rsvpItems.filter(item => item.coming).length}
+                  {guests.filter(guest => guest.coming).length}
                 </div>
                 <p className="text-sm text-muted-foreground">Zusagen</p>
               </CardContent>
@@ -399,7 +422,7 @@ const Admin = () => {
             <Card>
               <CardContent className="pt-6 text-center">
                 <div className="text-2xl font-bold text-foreground">
-                  {rsvpItems.filter(item => !item.coming).length}
+                  {guests.filter(guest => !guest.coming).length}
                 </div>
                 <p className="text-sm text-muted-foreground">Absagen</p>
               </CardContent>
@@ -407,7 +430,7 @@ const Admin = () => {
             <Card>
               <CardContent className="pt-6 text-center">
                 <div className="text-2xl font-bold text-foreground">
-                  {rsvpItems.filter(item => item.coming && item.item_title).length}
+                  {rsvpItems.filter(item => item.guest.coming && item.item_title).length}
                 </div>
                 <p className="text-sm text-muted-foreground">Mitbringsel</p>
               </CardContent>
@@ -528,20 +551,20 @@ const Admin = () => {
                   <TableBody>
                     {rsvpItems.map(item => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-medium">{item.guest_name}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{item.contact}</TableCell>
+                        <TableCell className="font-medium">{item.guest.guest_name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{item.guest.contact}</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{item.attendees_count}</Badge>
+                          <Badge variant="outline">{item.guest.attendees_count}</Badge>
                         </TableCell>
                         <TableCell>{item.item_title || '-'}</TableCell>
                         <TableCell>{item.category_name}</TableCell>
                         <TableCell>
-                          <Badge variant={item.coming ? "default" : "secondary"}>
-                            {item.coming ? 'Kommt' : 'Verhindert'}
+                          <Badge variant={item.guest.coming ? "default" : "secondary"}>
+                            {item.guest.coming ? 'Kommt' : 'Verhindert'}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {new Date(item.created_at).toLocaleDateString('de-CH', {
+                          {new Date(item.guest.created_at).toLocaleDateString('de-CH', {
                             day: '2-digit',
                             month: '2-digit',
                             year: 'numeric',
@@ -571,7 +594,7 @@ const Admin = () => {
       <Dialog open={isRsvpEditDialogOpen} onOpenChange={setIsRsvpEditDialogOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
-            <DialogTitle>{editingRsvpItem?.guest_name ? `RSVP bearbeiten: ${editingRsvpItem.guest_name}` : 'RSVP bearbeiten'}</DialogTitle>
+            <DialogTitle>{editingRsvpItem?.guest.guest_name ? `RSVP bearbeiten: ${editingRsvpItem.guest.guest_name}` : 'RSVP bearbeiten'}</DialogTitle>
           </DialogHeader>
           {editingRsvpItem && (
             <div className="grid gap-4 py-4">
@@ -579,8 +602,8 @@ const Admin = () => {
                 <Label htmlFor="guest_name" className="text-right">Name</Label>
                 <Input
                   id="guest_name"
-                  value={editingRsvpItem.guest_name}
-                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, guest_name: e.target.value })}
+                  value={editingRsvpItem.guest.guest_name}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, guest: { ...editingRsvpItem.guest, guest_name: e.target.value } })}
                   className="col-span-3"
                 />
               </div>
@@ -588,8 +611,8 @@ const Admin = () => {
                 <Label htmlFor="contact" className="text-right">Kontakt</Label>
                 <Input
                   id="contact"
-                  value={editingRsvpItem.contact}
-                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, contact: e.target.value })}
+                  value={editingRsvpItem.guest.contact}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, guest: { ...editingRsvpItem.guest, contact: e.target.value } })}
                   className="col-span-3"
                 />
               </div>
@@ -608,8 +631,8 @@ const Admin = () => {
                   id="attendees_count"
                   type="number"
                   min="1"
-                  value={editingRsvpItem.attendees_count}
-                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, attendees_count: parseInt(e.target.value) || 1 })}
+                  value={editingRsvpItem.guest.attendees_count}
+                  onChange={(e) => setEditingRsvpItem({ ...editingRsvpItem, guest: { ...editingRsvpItem.guest, attendees_count: parseInt(e.target.value) || 1 } })}
                   className="col-span-3"
                 />
               </div>
@@ -634,11 +657,11 @@ const Admin = () => {
                 <div className="col-span-3 flex items-center gap-2">
                   <Switch
                     id="coming"
-                    checked={editingRsvpItem.coming}
-                    onCheckedChange={(checked) => setEditingRsvpItem({ ...editingRsvpItem, coming: checked })}
+                    checked={editingRsvpItem.guest.coming}
+                    onCheckedChange={(checked) => setEditingRsvpItem({ ...editingRsvpItem, guest: { ...editingRsvpItem.guest, coming: checked } })}
                   />
                   <span className="text-sm text-muted-foreground">
-                    {editingRsvpItem.coming ? 'Kommt' : 'Verhindert'}
+                    {editingRsvpItem.guest.coming ? 'Kommt' : 'Verhindert'}
                   </span>
                 </div>
               </div>

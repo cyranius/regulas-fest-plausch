@@ -51,7 +51,7 @@ const Danke = () => {
 
           {/* Footer Note */}
           <div className="text-lg text-foreground pt-4 border-t border-muted">
-            Bei Fragen oder Änderungen deiner Anmeldung melde dich gerne direkt bei Regula.
+            Bei Fragen oder Änderungen deiner Anmeldung melde dich gerne direkt bei Tanja Hiller (0796787645) oder Sabrina Hiller (077 524 66 73).
           </div>
         </CardContent>
       </Card>

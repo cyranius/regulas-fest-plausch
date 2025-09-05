@@ -1,42 +1,62 @@
 # Implementation Plan
 
-## Overview
-The overall goal is to fix the RSVP deletion functionality in the Admin page. The current implementation shows a success toast but fails to delete the item from the Supabase database, and the item reappears upon refresh. This indicates a potential issue with the Supabase delete operation or database permissions.
+[Overview]
+This plan will resolve the issue of duplicate guest entries in Supabase when a single guest brings multiple items, ensuring that each guest is counted only once.
 
-This plan will involve investigating the Supabase client configuration, checking database permissions (specifically Row Level Security - RLS), and ensuring the `handleDeleteRsvp` function correctly interacts with the Supabase API. The primary focus will be on `src/pages/Admin.tsx` and the Supabase database configuration.
+The current data model stores guest information and item details in a single table (`rsvp_items`), leading to redundant guest data and incorrect attendee counts. To fix this, I will introduce a new `guests` table to store unique guest information and link it to the `rsvp_items` table with a foreign key. This will normalize the database schema and ensure data integrity.
 
-## Types
-No new types, interfaces, enums, or data structures are needed. The existing `RsvpItem` interface in `src/pages/Admin.tsx` is sufficient for the task.
+[Types]
+The database schema will be updated to include a new `guests` table and modify the existing `rsvp_items` table.
 
-## Files
-File modifications will be focused on the `Admin.tsx` component and potentially Supabase migration files.
-- `src/pages/Admin.tsx`: This file will be modified to enhance the error handling and logging within the `handleDeleteRsvp` function.
-- `supabase/migrations/[timestamp]_*.sql`: A new migration file may be created if Row Level Security (RLS) policies on the `rsvp_items` table need to be adjusted to allow deletion by the authenticated admin user.
+**New `guests` table:**
+- `id`: UUID (Primary Key)
+- `created_at`: TIMESTAMPTZ
+- `updated_at`: TIMESTAMPTZ
+- `guest_name`: TEXT
+- `contact`: TEXT
+- `coming`: BOOLEAN
+- `attendees_count`: INTEGER
 
-## Functions
-Function modifications will be limited to the `handleDeleteRsvp` function.
-- `handleDeleteRsvp` (in `src/pages/Admin.tsx`):
-    - The function will be updated to include more detailed logging of the `error` object returned by the Supabase `delete()` operation. This will help in diagnosing the exact cause of the deletion failure (e.g., permission denied, network error).
-    - A `console.log` will be added to display the `itemId` being passed to the delete function, ensuring the correct ID is being targeted.
+**Modified `rsvp_items` table:**
+- `guest_id`: UUID (Foreign Key to `guests.id`)
+- `guest_name`: (removed)
+- `contact`: (removed)
+- `coming`: (removed)
+- `attendees_count`: (removed)
 
-## Classes
-No new classes will be created, and no existing classes will be modified or removed.
+[Files]
+The following files will be created or modified:
 
-## Dependencies
-No new packages or version changes are required. The `@supabase/supabase-js` dependency is already correctly integrated and will continue to be used.
+- **New file:** `supabase/migrations/YYYYMMDDHHMMSS_add_guests_table.sql` - A new database migration to create the `guests` table and update the `rsvp_items` table.
+- **Modified file:** `src/pages/Anmeldung.tsx` - The form submission logic will be updated to first create a guest entry, then associate items with that guest.
+- **Modified file:** `src/integrations/supabase/types.ts` - The Supabase type definitions will be updated to reflect the new database schema.
+- **Modified file:** `src/pages/Uebersicht.tsx` - The data fetching and display logic will be updated to work with the new schema.
+- **Modified file:** `src/pages/Admin.tsx` - The data fetching and display logic will be updated to work with the new schema.
 
-## Testing
-The testing approach will be manual and focused on verifying the deletion functionality.
-- Manually test the delete functionality in the Admin page after applying the code changes.
-- Verify that the RSVP item is immediately removed from the UI upon successful deletion.
-- Refresh the Admin page to confirm that the deleted item does not reappear, indicating successful removal from the Supabase database.
-- Monitor the browser's developer console for any errors or warnings during the delete operation.
-- If a Supabase migration is applied, verify the RLS policy changes in the Supabase dashboard.
+[Functions]
+The following functions will be modified:
 
-## Implementation Order
-The implementation will follow these logical steps to minimize conflicts and ensure successful integration:
-1.  Modify the `handleDeleteRsvp` function in `src/pages/Admin.tsx` to enhance error logging and confirm the `itemId` being used.
-2.  Review the Supabase Row Level Security (RLS) policies for the `rsvp_items` table to ensure that the authenticated admin user has `DELETE` permissions. This will likely involve using the Supabase dashboard or CLI.
-3.  If RLS policies are found to be restrictive, create a new Supabase migration file (`supabase/migrations/[timestamp]_add_delete_rls.sql`) to update the RLS policy on the `rsvp_items` table, granting appropriate delete permissions.
-4.  Apply the Supabase migration (if created).
-5.  Test the deletion functionality thoroughly in the Admin page.
+- `handleSubmit` in `src/pages/Anmeldung.tsx`: This function will be refactored to first insert a new guest into the `guests` table, and then insert the associated items into the `rsvp_items` table with the new `guest_id`.
+- `loadData` in `src/pages/Anmeldung.tsx`: This function will be updated to fetch data from both the `guests` and `rsvp_items` tables and correctly calculate the number of available slots for each category.
+- Data fetching functions in `src/pages/Uebersicht.tsx` and `src/pages/Admin.tsx`: These will be updated to join the `guests` and `rsvp_items` tables to display the correct information.
+
+[Classes]
+No classes will be added, modified, or removed.
+
+[Dependencies]
+No new dependencies will be added.
+
+[Testing]
+Manual testing will be required to verify the following:
+- Submitting the form with one or more items creates a single guest entry and the correct number of item entries.
+- The "Buffet-Übersicht" section on the `Anmeldung` page correctly displays the number of available slots.
+- The `Uebersicht` and `Admin` pages display the correct data.
+
+[Implementation Order]
+1. Create the new database migration file (`supabase/migrations/YYYYMMDDHHMMSS_add_guests_table.sql`).
+2. Apply the database migration.
+3. Update the Supabase type definitions in `src/integrations/supabase/types.ts`.
+4. Modify the `handleSubmit` and `loadData` functions in `src/pages/Anmeldung.tsx`.
+5. Update the data fetching and display logic in `src/pages/Uebersicht.tsx`.
+6. Update the data fetching and display logic in `src/pages/Admin.tsx`.
+7. Manually test the changes.

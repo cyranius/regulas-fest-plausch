@@ -9,8 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Badge } from '@/components/ui/badge';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface Category {
   id: string;
@@ -21,9 +23,20 @@ interface Category {
 
 interface RsvpItem {
   id: string;
-  guest_name: string;
   item_title: string;
   category_name: string;
+  guests: {
+    guest_name: string;
+  } | null;
+}
+
+interface ItemToBring {
+  id: string; // Unique ID for React list rendering
+  categoryId: string | null | undefined;
+  itemTitle: string;
+  servings: number;
+  dietTags: string[];
+  warmNeeded: boolean;
 }
 
 const Anmeldung = () => {
@@ -33,18 +46,27 @@ const Anmeldung = () => {
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
-  // Form state - Simplified: removed warmNotes and bringsUtensils
+  // Form state for personal details
   const [formData, setFormData] = useState({
     guestName: '',
     contact: '',
     coming: 'yes',
     attendeesCount: 1,
-    categoryId: undefined as string | null | undefined,
-    itemTitle: '',
-    dietTags: [] as string[],
-    warmNeeded: false,
   });
+
+  // Form state for items to bring
+  const [itemsToBring, setItemsToBring] = useState<ItemToBring[]>([
+    {
+      id: crypto.randomUUID(),
+      categoryId: undefined,
+      itemTitle: '',
+      servings: 1,
+      dietTags: [],
+      warmNeeded: false,
+    },
+  ]);
 
   useEffect(() => {
     loadData();
@@ -54,7 +76,7 @@ const Anmeldung = () => {
     try {
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
-        .select('id, name, quota, sort_order') // Removed 'examples'
+        .select('id, name, quota, sort_order')
         .eq('active', true)
         .order('sort_order');
 
@@ -62,13 +84,24 @@ const Anmeldung = () => {
 
       const { data: rsvpData, error: rsvpError } = await supabase
         .from('rsvp_items')
-        .select('id, guest_name, item_title, category_id, categories:category_id (name)')
-        .eq('coming', true);
-      
+        .select('id, item_title, category_id, categories:category_id (name), guests (guest_name)');
+
       if (rsvpError) throw rsvpError;
 
-      const categoryCounts = rsvpData?.reduce((acc, item) => {
-        acc[item.category_id] = (acc[item.category_id] || 0) + 1;
+      const { data: guestsData, error: guestsError } = await supabase
+        .from('guests')
+        .select('id, coming');
+
+      if (guestsError) throw guestsError;
+
+      const comingGuestIds = new Set(guestsData?.filter(g => g.coming).map(g => g.id));
+      
+      const comingRsvpItems = rsvpData?.filter(item => comingGuestIds.has((item as any).guest_id));
+
+      const categoryCounts = comingRsvpItems?.reduce((acc, item) => {
+        if (item.category_id) {
+          acc[item.category_id] = (acc[item.category_id] || 0) + 1;
+        }
         return acc;
       }, {} as Record<string, number>) || {};
 
@@ -79,13 +112,13 @@ const Anmeldung = () => {
 
       const formattedItems = rsvpData?.map(item => ({
         id: item.id,
-        guest_name: item.guest_name,
         item_title: item.item_title || '',
-        category_name: (item.categories as any)?.name || ''
+        category_name: (item.categories as any)?.name || '',
+        guests: item.guests,
       })) || [];
 
       setCategories(enrichedCategories);
-      setExistingItems(formattedItems);
+      setExistingItems(formattedItems as any);
     } catch (error) {
       console.error('Error loading data:', error);
       toast({
@@ -103,20 +136,42 @@ const Anmeldung = () => {
     setSubmitting(true);
 
     try {
-      const { error } = await supabase
-        .from('rsvp_items')
+      const { data: guest, error: guestError } = await supabase
+        .from('guests')
         .insert({
           guest_name: formData.guestName,
           contact: formData.contact,
           coming: formData.coming === 'yes',
           attendees_count: formData.attendeesCount,
-          category_id: formData.categoryId === 'no-contribution' ? null : formData.categoryId,
-          item_title: formData.categoryId === 'no-contribution' ? null : formData.itemTitle || null,
-          diet_tags: formData.dietTags,
-          warm_needed: formData.warmNeeded,
-        });
+        })
+        .select('id')
+        .single();
 
-      if (error) throw error;
+      if (guestError) throw guestError;
+      if (!guest) throw new Error("Guest creation failed.");
+
+      const guestId = guest.id;
+
+      if (formData.coming === 'yes') {
+        const rsvpItemsToInsert = itemsToBring
+          .filter(item => item.categoryId && item.categoryId !== 'no-contribution')
+          .map(item => ({
+            guest_id: guestId,
+            category_id: item.categoryId,
+            item_title: item.itemTitle || null,
+            servings: item.servings,
+            diet_tags: item.dietTags,
+            warm_needed: item.warmNeeded,
+          }));
+
+        if (rsvpItemsToInsert.length > 0) {
+          const { error: rsvpError } = await supabase
+            .from('rsvp_items')
+            .insert(rsvpItemsToInsert);
+          if (rsvpError) throw rsvpError;
+        }
+      }
+
 
       toast({
         title: formData.coming === 'yes' ? "Anmeldung erfolgreich!" : "Schade!",
@@ -138,13 +193,42 @@ const Anmeldung = () => {
     }
   };
 
-  const toggleDietTag = (tag: string) => {
-    setFormData(prev => ({
-      ...prev,
-      dietTags: prev.dietTags.includes(tag)
-        ? prev.dietTags.filter(t => t !== tag)
-        : [...prev.dietTags, tag]
-    }));
+  const handleItemChange = (id: string, field: keyof ItemToBring, value: any) => {
+    setItemsToBring(prevItems =>
+      prevItems.map(item => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const toggleDietTag = (itemId: string, tag: string) => {
+    setItemsToBring(prevItems =>
+      prevItems.map(item => {
+        if (item.id === itemId) {
+          const newDietTags = item.dietTags.includes(tag)
+            ? item.dietTags.filter(t => t !== tag)
+            : [...item.dietTags, tag];
+          return { ...item, dietTags: newDietTags };
+        }
+        return item;
+      })
+    );
+  };
+
+  const addItemToBring = () => {
+    setItemsToBring(prevItems => [
+      ...prevItems,
+      {
+        id: crypto.randomUUID(),
+        categoryId: undefined,
+        itemTitle: '',
+        servings: 1,
+        dietTags: [],
+        warmNeeded: false,
+      },
+    ]);
+  };
+
+  const removeItemToBring = (id: string) => {
+    setItemsToBring(prevItems => prevItems.filter(item => item.id !== id));
   };
 
   if (loading) {
@@ -233,59 +317,161 @@ const Anmeldung = () => {
                   {formData.coming === 'yes' && (
                     <div className="space-y-8">
                       <h2 className="text-2xl font-semibold text-black border-b pb-3">2. Beitrag zum Buffet (optional)</h2>
-                      
-                      <div>
-                        <Label htmlFor="category" className="text-base font-medium text-gray-900">Kategorie</Label>
-                        <Select value={formData.categoryId || ''} onValueChange={(value) => setFormData(prev => ({ ...prev, categoryId: value === '' ? undefined : value }))}>
-                          <SelectTrigger className="mt-2 text-base p-3 border-gray-300 text-gray-900"><SelectValue placeholder="Wähle eine Kategorie" /></SelectTrigger>
-                          <SelectContent>
-                            {categories.map(category => {
-                              const available = category.quota - category.current_count;
-                              const isFull = available <= 0;
-                              return (
-                                <SelectItem key={category.id} value={category.id} disabled={isFull} className={`text-base text-gray-900 ${isFull ? 'opacity-50' : ''}`}>
-                                  <div className="flex items-center justify-between w-full">
-                                    <span>{category.name}</span>
-                                    <span className="text-sm text-gray-700 ml-4">({isFull ? 'voll' : `${available} frei`})</span>
-                                  </div>
-                                </SelectItem>
-                              );
-                            })}
-                            <SelectItem value="no-contribution" className="text-base text-gray-900">Ich bringe nichts mit</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
 
-                      {formData.categoryId && formData.categoryId !== 'no-contribution' && (
-                        <>
+                      {isMobile && (
+                        <Accordion type="single" collapsible className="w-full">
+                          <AccordionItem value="buffet-overview">
+                            <AccordionTrigger className="text-xl font-semibold text-black flex items-center gap-2">
+                              <Utensils className="h-5 w-5 text-pink-600" />
+                              Buffet-Übersicht
+                            </AccordionTrigger>
+                            <AccordionContent>
+                              <Card className="bg-white border-gray-200 p-6 shadow-none">
+                                <CardContent className="p-0 space-y-6">
+                                  {categories.map(category => {
+                                    const available = category.quota - category.current_count;
+                                    let badgeClass = "bg-green-200 text-black";
+                                    if (available <= 0) badgeClass = "bg-red-200 text-black";
+                                    else if (available <= 1) badgeClass = "bg-yellow-200 text-black";
+                                    
+                                    return (
+                                      <div key={category.id}>
+                                        <div className="flex items-center justify-between mb-2">
+                                          <h4 className="font-medium text-black text-base">{category.name}</h4>
+                                          <Badge className={badgeClass}>{available <= 0 ? 'voll' : `${available} frei`}</Badge>
+                                        </div>
+                                        <div className="text-base text-gray-700 space-y-2">
+                                          {existingItems
+                                            .filter(item => item.category_name === category.name && item.item_title)
+                                            .map(item => (
+                                              <div key={item.id} className="flex items-center gap-2">
+                                                <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
+                                                <span>{item.guests?.guest_name}: {item.item_title || 'Überraschung'}</span>
+                                              </div>
+                                            ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </CardContent>
+                              </Card>
+                            </AccordionContent>
+                          </AccordionItem>
+                        </Accordion>
+                      )}
+                      
+                      {itemsToBring.map((item, index) => (
+                        <div key={item.id} className="space-y-6 border-t pt-6 first:border-t-0 first:pt-0">
+                          <h3 className="text-xl font-semibold text-black flex items-center gap-2">
+                            {itemsToBring.length > 1 && `Beitrag ${index + 1}`}
+                            {itemsToBring.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeItemToBring(item.id)}
+                                className="text-red-500 hover:text-red-700"
+                              >
+                                Entfernen
+                              </Button>
+                            )}
+                          </h3>
                           <div>
-                            <Label htmlFor="itemTitle" className="text-base font-medium text-gray-900">Was bringst du mit?</Label>
-                            <Input id="itemTitle" value={formData.itemTitle} onChange={(e) => setFormData(prev => ({ ...prev, itemTitle: e.target.value }))} className="mt-2 text-base p-3 border-gray-300 focus:border-pink-500 focus:ring-pink-500 text-gray-900" placeholder="z.B. Schokoladenkuchen"/>
+                            <Label htmlFor={`category-${item.id}`} className="text-base font-medium text-gray-900">Kategorie</Label>
+                            <Select
+                              value={item.categoryId || ''}
+                              onValueChange={(value) => handleItemChange(item.id, 'categoryId', value === '' ? undefined : value)}
+                            >
+                              <SelectTrigger id={`category-${item.id}`} className="mt-2 text-base p-3 border-gray-300 text-gray-900">
+                                <SelectValue placeholder="Wähle eine Kategorie" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {categories.map(category => {
+                                  const available = category.quota - category.current_count;
+                                  const isFull = available <= 0;
+                                  return (
+                                    <SelectItem key={category.id} value={category.id} disabled={isFull} className={`text-base text-gray-900 ${isFull ? 'opacity-50' : ''}`}>
+                                      <div className="flex items-center justify-between w-full">
+                                        <span>{category.name}</span>
+                                        <span className="text-sm text-gray-700 ml-4">({isFull ? 'voll' : `${available} frei`})</span>
+                                      </div>
+                                    </SelectItem>
+                                  );
+                                })}
+                                <SelectItem value="no-contribution" className="text-base text-gray-900">Ich bringe nichts mit</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <div className="space-y-4">
-                            <Label className="text-base font-medium text-gray-900">Besonderheiten (optional)</Label>
-                            <div className="flex flex-col space-y-3">
-                              {['vegetarisch', 'vegan', 'glutenfrei', 'laktosefrei', 'nussfrei'].map(tag => (
-                                <div key={tag} className="flex items-center space-x-3">
-                                  <Checkbox id={tag} checked={formData.dietTags.includes(tag)} onCheckedChange={() => toggleDietTag(tag)} className="h-5 w-5 text-pink-500 border-pink-500 focus:ring-pink-500 data-[state=checked]:border-pink-500"/>
-                                  <Label htmlFor={tag} className="text-base capitalize font-normal text-gray-900">{tag}</Label>
+
+                          {item.categoryId && item.categoryId !== 'no-contribution' && (
+                            <>
+                              <div>
+                                <Label htmlFor={`itemTitle-${item.id}`} className="text-base font-medium text-gray-900">Was bringst du mit?</Label>
+                                <Input
+                                  id={`itemTitle-${item.id}`}
+                                  value={item.itemTitle}
+                                  onChange={(e) => handleItemChange(item.id, 'itemTitle', e.target.value)}
+                                  className="mt-2 text-base p-3 border-gray-300 focus:border-pink-500 focus:ring-pink-500 text-gray-900"
+                                  placeholder="z.B. Schokoladenkuchen"
+                                />
+                              </div>
+                              <div className="space-y-4">
+                                <Label className="text-base font-medium text-gray-900">Besonderheiten (optional)</Label>
+                                <div className="flex flex-col space-y-3">
+                                  {['vegetarisch', 'vegan', 'glutenfrei', 'laktosefrei', 'nussfrei'].map(tag => (
+                                    <div key={tag} className="flex items-center space-x-3">
+                                      <Checkbox
+                                        id={`${tag}-${item.id}`}
+                                        checked={item.dietTags.includes(tag)}
+                                        onCheckedChange={() => toggleDietTag(item.id, tag)}
+                                        className="h-5 w-5 text-pink-500 border-pink-500 focus:ring-pink-500 data-[state=checked]:border-pink-500"
+                                      />
+                                      <Label htmlFor={`${tag}-${item.id}`} className="text-base capitalize font-normal text-gray-900">{tag}</Label>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex items-center space-x-3">
-                              <Checkbox id="warmNeeded" checked={formData.warmNeeded} onCheckedChange={(checked) => setFormData(prev => ({ ...prev, warmNeeded: checked as boolean }))} className="h-5 w-5 text-pink-500 border-pink-500 focus:ring-pink-500 data-[state=checked]:border-pink-500"/>
-                              <Label htmlFor="warmNeeded" className="text-base font-normal text-gray-900">Muss warmgehalten werden?</Label>
-                            </div>
-                          </div>
-                        </>
+                              </div>
+                              <div>
+                                <div className="flex items-center space-x-3">
+                                  <Checkbox
+                                    id={`warmNeeded-${item.id}`}
+                                    checked={item.warmNeeded}
+                                    onCheckedChange={(checked) => handleItemChange(item.id, 'warmNeeded', checked as boolean)}
+                                    className="h-5 w-5 text-pink-500 border-pink-500 focus:ring-pink-500 data-[state=checked]:border-pink-500"
+                                  />
+                                  <Label htmlFor={`warmNeeded-${item.id}`} className="text-base font-normal text-gray-900">Muss warmgehalten werden?</Label>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                      {formData.coming === 'yes' && (
+                        <div className="mt-4">
+                          <Button type="button" onClick={addItemToBring} className="w-full bg-pink-600 hover:bg-pink-700 text-white">
+                            Weiteren Beitrag hinzufügen
+                          </Button>
+                          <p className="text-sm text-gray-600 mt-2 text-center">
+                            Falls du die doppelte Menge machen möchtest, füge nochmals dasselbe hinzu (z.B. für 8 statt 4 Personen).
+                          </p>
+                        </div>
                       )}
                     </div>
                   )}
 
                   <div className="pt-6">
-                    <Button type="submit" size="lg" className="w-full md:w-auto text-lg py-3 px-8 bg-pink-600 hover:bg-pink-700 text-white" disabled={submitting || !formData.guestName || !formData.contact}>
+                    <Button
+                      type="submit"
+                      size="lg"
+                      className="w-full md:w-auto text-lg py-3 px-8 bg-pink-600 hover:bg-pink-700 text-white"
+                      disabled={
+                        submitting ||
+                        !formData.guestName ||
+                        !formData.contact ||
+                        (formData.coming === 'yes' &&
+                          itemsToBring.some(item => item.categoryId && item.categoryId !== 'no-contribution' && !item.itemTitle))
+                      }
+                    >
                       {submitting ? (
                         <div className="flex items-center gap-2">
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
@@ -304,7 +490,7 @@ const Anmeldung = () => {
             </Card>
           </div>
 
-          {formData.coming === 'yes' && (
+          {formData.coming === 'yes' && !isMobile && (
             <div className="lg:col-span-2">
               <Card className="bg-white border-gray-200 p-6">
                 <CardHeader className="p-0 mb-4">
@@ -328,11 +514,11 @@ const Anmeldung = () => {
                         </div>
                         <div className="text-base text-gray-700 space-y-2">
                           {existingItems
-                            .filter(item => item.category_name === category.name)
+                            .filter(item => item.category_name === category.name && item.item_title)
                             .map(item => (
                               <div key={item.id} className="flex items-center gap-2">
                                 <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
-                                <span>{item.guest_name}: {item.item_title || 'Überraschung'}</span>
+                                <span>{item.guests?.guest_name}: {item.item_title || 'Überraschung'}</span>
                               </div>
                             ))}
                         </div>

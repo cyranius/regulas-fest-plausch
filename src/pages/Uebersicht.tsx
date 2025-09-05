@@ -6,16 +6,21 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 
-interface RsvpItem {
+interface Guest {
   id: string;
   guest_name: string;
   contact: string;
-  item_title: string;
   attendees_count: number;
+  coming: boolean;
+  rsvp_items: RsvpItem[];
+}
+
+interface RsvpItem {
+  id: string;
+  item_title: string;
   diet_tags: string[];
   warm_needed: boolean;
   brings_utensils: boolean;
-  coming: boolean;
   category: {
     name: string;
     examples: string;
@@ -29,7 +34,7 @@ interface CategoryGroup {
 }
 
 const Uebersicht = () => {
-  const [rsvpItems, setRsvpItems] = useState<RsvpItem[]>([]);
+  const [guests, setGuests] = useState<Guest[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string; quota: number; examples: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalAttendees, setTotalAttendees] = useState(0);
@@ -40,29 +45,30 @@ const Uebersicht = () => {
 
   const loadData = async () => {
     try {
-      // Load all RSVP items
-      const { data: rsvpData, error: rsvpError } = await supabase
-        .from('rsvp_items')
+      const { data: guestsData, error: guestsError } = await supabase
+        .from('guests')
         .select(`
           id,
           guest_name,
           contact,
-          item_title,
           attendees_count,
-          diet_tags,
-          warm_needed,
-          brings_utensils,
           coming,
-          categories:category_id (
-            name,
-            examples
+          rsvp_items (
+            id,
+            item_title,
+            diet_tags,
+            warm_needed,
+            brings_utensils,
+            categories:category_id (
+              name,
+              examples
+            )
           )
         `)
         .order('created_at', { ascending: true });
 
-      if (rsvpError) throw rsvpError;
+      if (guestsError) throw guestsError;
 
-      // Load categories
       const { data: categoriesData, error: categoriesError } = await supabase
         .from('categories')
         .select('*')
@@ -71,18 +77,19 @@ const Uebersicht = () => {
 
       if (categoriesError) throw categoriesError;
 
-      // Map the data to match our interface
-      const mappedRsvpData = rsvpData?.map(item => ({
-        ...item,
-        category: item.categories
+      const mappedGuestsData = guestsData?.map(guest => ({
+        ...guest,
+        rsvp_items: guest.rsvp_items.map((item: any) => ({
+          ...item,
+          category: item.categories,
+        })),
       })) || [];
-      
-      setRsvpItems(mappedRsvpData);
+
+      setGuests(mappedGuestsData);
       setCategories(categoriesData || []);
-      
-      // Calculate total attendees
-      const total = rsvpData?.reduce((sum, item) => {
-        return sum + (item.coming ? item.attendees_count : 0);
+
+      const total = guestsData?.reduce((sum, guest) => {
+        return sum + (guest.coming ? guest.attendees_count : 0);
       }, 0) || 0;
       setTotalAttendees(total);
 
@@ -93,23 +100,23 @@ const Uebersicht = () => {
     }
   };
 
-  const comingGuests = rsvpItems.filter(item => item.coming);
-  const notComingGuests = rsvpItems.filter(item => !item.coming);
+  const comingGuests = guests.filter(guest => guest.coming);
+  const notComingGuests = guests.filter(guest => !guest.coming);
 
-  // Group items by category
   const categoryGroups: CategoryGroup[] = categories.map(category => {
-    const items = comingGuests.filter(item => 
-      item.category?.name === category.name
+    const items = comingGuests.flatMap(guest =>
+      guest.rsvp_items
+        .filter(item => item.category?.name === category.name)
+        .map(item => ({ ...item, guest_name: guest.guest_name, attendees_count: guest.attendees_count }))
     );
     return {
       name: category.name,
-      items,
-      quota: category.quota
+      items: items as any,
+      quota: category.quota,
     };
   });
 
-  // Items without category
-  const itemsWithoutCategory = comingGuests.filter(item => !item.category);
+  const guestsWithoutItems = comingGuests.filter(guest => guest.rsvp_items.length === 0);
 
   if (loading) {
     return (
@@ -166,7 +173,7 @@ const Uebersicht = () => {
                   <Utensils className="h-6 w-6 text-primary" />
                 </div>
                 <div className="text-3xl font-bold text-foreground">
-                  {comingGuests.filter(item => item.category).length}
+                  {comingGuests.reduce((acc, guest) => acc + guest.rsvp_items.length, 0)}
                 </div>
                 <p className="text-muted-foreground">Mitbringsel geplant</p>
               </CardContent>
@@ -208,10 +215,10 @@ const Uebersicht = () => {
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
                                 <p className="font-medium text-foreground">
-                                  {item.guest_name}
-                                  {item.attendees_count > 1 && (
+                                  {(item as any).guest_name}
+                                  {(item as any).attendees_count > 1 && (
                                     <span className="text-sm text-muted-foreground ml-1">
-                                      (+{item.attendees_count - 1})
+                                      (+{(item as any).attendees_count - 1})
                                     </span>
                                   )}
                                 </p>
@@ -254,21 +261,21 @@ const Uebersicht = () => {
           </div>
 
           {/* Gäste ohne Mitbringsel */}
-          {itemsWithoutCategory.length > 0 && (
+          {guestsWithoutItems.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>Kommen ohne Mitbringsel / Überraschung</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {itemsWithoutCategory.map(item => (
-                    <div key={item.id} className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
+                  {guestsWithoutItems.map(guest => (
+                    <div key={guest.id} className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
                       <Heart className="h-4 w-4 text-primary" />
                       <span className="font-medium">
-                        {item.guest_name}
-                        {item.attendees_count > 1 && (
+                        {guest.guest_name}
+                        {guest.attendees_count > 1 && (
                           <span className="text-sm text-muted-foreground ml-1">
-                            (+{item.attendees_count - 1})
+                            (+{guest.attendees_count - 1})
                           </span>
                         )}
                       </span>
@@ -287,9 +294,9 @@ const Uebersicht = () => {
               </CardHeader>
               <CardContent>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {notComingGuests.map(item => (
-                    <div key={item.id} className="flex items-center gap-2 p-3 bg-muted/20 rounded-lg">
-                      <span className="text-muted-foreground">{item.guest_name}</span>
+                  {notComingGuests.map(guest => (
+                    <div key={guest.id} className="flex items-center gap-2 p-3 bg-muted/20 rounded-lg">
+                      <span className="text-muted-foreground">{guest.guest_name}</span>
                     </div>
                   ))}
                 </div>
